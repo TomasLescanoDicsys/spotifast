@@ -1,0 +1,68 @@
+name: Windows build
+
+# Builds the x64 Windows app and its installer from main, to try a change on
+# Windows without cutting a release. Nothing is published: the executable
+# and the setup program are this run's artifact.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+    # A cold cache builds libprojectM and the whole release profile.
+    timeout-minutes: 90
+    env:
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # libprojectM reads OpenGL through GLEW on Windows; projectm-sys builds
+      # against vcpkg's static-CRT triplet, matching .cargo/config.toml.
+      - name: GLEW for libprojectM
+        run: vcpkg install glew:x64-windows-static
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+      - uses: jdx/mr-boxington-action@v1
+        with:
+          cache-generation: windows-build-v1
+      - run: mbx build --release --locked
+
+      - name: Verify standalone Windows runtime
+        shell: pwsh
+        run: |
+          $imports = & dumpbin /dependents target\release\spotifast.exe | Out-String
+          $runtime = $imports | Select-String -Pattern 'MSVCP[0-9_]*\.dll|VCRUNTIME[0-9_]*\.dll'
+          if ($runtime) { throw "Spotifast imports an MSVC runtime:`n$runtime" }
+
+      # Inno Setup ships with the runner image. PowerShell, because bash on
+      # Windows rewrites /D... arguments as paths.
+      - name: Installer and portable executable
+        shell: pwsh
+        run: |
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc "/DVersion=$version" /DArch=x86_64 `
+            "/DBinary=$PWD\target\release\spotifast.exe" `
+            "/DOutputDir=$PWD\dist" packaging\windows\spotifast.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target\release\spotifast.exe dist\spotifast.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spotifast-windows-x64-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
