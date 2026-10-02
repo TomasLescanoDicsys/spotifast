@@ -573,6 +573,10 @@ pub struct App {
     pub winamp: crate::winamp::WinampState,
     /// The spectrum behind the player bar, when that is chosen.
     pub player_bar_analyser: crate::vis::WideAnalyser,
+    /// The pro analyser's measurements, and its spectrogram's texture in
+    /// the current window.
+    pub pro_analyser: crate::analyser::ProAnalyser,
+    pub pro_spectrogram: Option<egui::TextureHandle>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -972,6 +976,8 @@ impl App {
             update_receipt: None,
             winamp: crate::winamp::WinampState::new(session.winamp_pos, tap, eq),
             player_bar_analyser: crate::vis::WideAnalyser::default(),
+            pro_analyser: crate::analyser::ProAnalyser::default(),
+            pro_spectrogram: None,
         };
         app.local.volume = app.settings.volume;
         // What was played here is on disk and needs nothing from the
@@ -996,6 +1002,7 @@ impl App {
         ctx.set_theme(self.theme_preference());
         self.applied_dark = None;
         self.winamp.forget_textures();
+        self.pro_spectrogram = None;
         self.window_hidden = false;
         self.hide_intent = false;
         self.wants_show = false;
@@ -1086,6 +1093,7 @@ impl App {
         // The Winamp window went with it; it comes back where it was.
         self.winamp.remember_position();
         self.winamp.forget_textures();
+        self.pro_spectrogram = None;
         self.window_hidden = true;
         self.hide_intent = false;
         self.wants_show = false;
@@ -9376,6 +9384,10 @@ impl App {
                     }
                 }
             }
+            Action::ToggleProAnalyser => {
+                self.settings.pro_analyser_open = !self.settings.pro_analyser_open;
+                self.settings_dirty = true;
+            }
             Action::SetMilkdropSeconds(seconds) => {
                 self.settings.milkdrop_seconds = seconds.clamp(1, 3600);
                 self.settings_dirty = true;
@@ -9808,6 +9820,7 @@ impl App {
         } else {
             crate::ui::show(self, ui);
         }
+        crate::ui::analyser::show(self, ctx);
         self.apply_actions(ctx);
         let autoscroll = self.autoscroll.finish(
             ctx,

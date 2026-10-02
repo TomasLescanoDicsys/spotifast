@@ -719,6 +719,14 @@ fn options_menu(app: &mut App, ui: &mut Ui, unit: f32) {
             app.actions.push(Action::SetWinampTaskbar(visible));
         }
     }
+    let mut pro = app.settings.pro_analyser_open;
+    if ui
+        .checkbox(&mut pro, gettext(locale, "Pro analyser").as_ref())
+        .on_hover_text(super::keys::PRO_ANALYSER_SHORTCUT)
+        .clicked()
+    {
+        app.actions.push(Action::ToggleProAnalyser);
+    }
     let mut milkdrop = app.settings.milkdrop_open;
     if ui
         .checkbox(&mut milkdrop, "MilkDrop")
@@ -924,6 +932,14 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
             }
         }
         ui.separator();
+        let mut pro = app.settings.pro_analyser_open;
+        if ui
+            .checkbox(&mut pro, gettext(locale, "Pro analyser").as_ref())
+            .on_hover_text(super::keys::PRO_ANALYSER_SHORTCUT)
+            .clicked()
+        {
+            app.actions.push(Action::ToggleProAnalyser);
+        }
         let mut milkdrop = app.settings.milkdrop_open;
         if ui
             .checkbox(&mut milkdrop, "MilkDrop")

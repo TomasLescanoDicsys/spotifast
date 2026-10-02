@@ -478,6 +478,26 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 if theme::icon_button(
                     ui,
+                    Icon::Activity,
+                    ICON_BUTTON_ICON,
+                    if app.settings.pro_analyser_open {
+                        palette.accent
+                    } else {
+                        palette.secondary
+                    },
+                    palette.text,
+                    &format!(
+                        "{} ({})",
+                        gettext(locale, "Pro analyser"),
+                        super::keys::PRO_ANALYSER_SHORTCUT
+                    ),
+                )
+                .clicked()
+                {
+                    app.actions.push(Action::ToggleProAnalyser);
+                }
+                if theme::icon_button(
+                    ui,
                     Icon::AudioLines,
                     ICON_BUTTON_ICON,
                     if app.settings.milkdrop_open {

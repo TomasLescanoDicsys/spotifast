@@ -239,8 +239,9 @@ impl Sink for Tapped {
 
 /// The classic analyser's FFT, as Winamp's own source has it: 512
 /// samples under a Hann window, 256 magnitudes out, each halved. The
-/// player bar's analyser runs the same transform over more samples.
-struct Fft {
+/// player bar's analyser runs the same transform over more samples, and
+/// the pro analyser a longer one, unscaled.
+pub(crate) struct Fft {
     bit_reversed: Vec<usize>,
     envelope: Vec<f32>,
     twiddles: Vec<(f32, f32)>,
@@ -249,7 +250,7 @@ struct Fft {
 }
 
 impl Fft {
-    fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         let mut bit_reversed: Vec<usize> = (0..n).collect();
         let mut j = 0;
         for i in 0..n {
@@ -286,6 +287,15 @@ impl Fft {
     }
 
     fn spectrum(&mut self, wave: &[f32], out: &mut [f32]) {
+        self.magnitudes(wave, out);
+        for slot in out.iter_mut() {
+            *slot *= SPEC_SCALE;
+        }
+    }
+
+    /// Each bin's magnitude under the Hann window, unscaled: a full-scale
+    /// sine reads a quarter of `n`.
+    pub(crate) fn magnitudes(&mut self, wave: &[f32], out: &mut [f32]) {
         let n = self.real.len();
         for i in 0..n {
             let from = self.bit_reversed[i];
@@ -318,8 +328,7 @@ impl Fft {
             stage += 1;
         }
         for (i, slot) in out.iter_mut().enumerate() {
-            *slot = (self.real[i] * self.real[i] + self.imaginary[i] * self.imaginary[i]).sqrt()
-                * SPEC_SCALE;
+            *slot = (self.real[i] * self.real[i] + self.imaginary[i] * self.imaginary[i]).sqrt();
         }
     }
 }

@@ -3168,6 +3168,41 @@ msgstr ""
 "Nutze unter Wayland das Tastenkürzel „Immer im Vordergrund“ oder eine "
 "Fensterregel deines Desktops."
 
+#. Translators: The window with a large oscilloscope, spectrum and spectrogram, and its menu entry.
+#: src/ui/analyser.rs:78
+msgid "Pro analyser"
+msgstr "Profi-Analysator"
+
+#. Translators: A picture of frequencies over time, brighter where louder.
+#: src/ui/analyser.rs:500
+msgid "Spectrogram"
+msgstr "Spektrogramm"
+
+#. Translators: The loudest sample level of the last moments, in dBFS.
+#: src/ui/analyser.rs:190
+msgid "Peak"
+msgstr "Spitze"
+
+#. Translators: Peak level minus RMS level, in dB.
+#: src/ui/analyser.rs:216
+msgid "Crest factor"
+msgstr "Crest-Faktor"
+
+#. Translators: The loudest frequency in the spectrum right now.
+#: src/ui/analyser.rs:228
+msgid "Dominant frequency"
+msgstr "Dominante Frequenz"
+
+#. Translators: Shown in the pro analyser while the song is paused.
+#: src/ui/analyser.rs:160
+msgid "Paused: the picture holds still"
+msgstr "Pausiert: Das Bild bleibt stehen"
+
+#. Translators: Hover text on the oscilloscope's time base and gain buttons.
+#: src/ui/analyser.rs:374
+msgid "Click to step, right-click to step back, or scroll over the scope"
+msgstr "Klicken für den nächsten Schritt, Rechtsklick für den vorigen, oder über dem Oszilloskop scrollen"
+
 #~ msgid "Scroll left"
 #~ msgstr "Nach links scrollen"
 

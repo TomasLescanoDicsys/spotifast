@@ -3167,6 +3167,41 @@ msgstr ""
 "В Wayland используй сочетание клавиш или правило окна «Поверх других окон» "
 "своего окружения."
 
+#. Translators: The window with a large oscilloscope, spectrum and spectrogram, and its menu entry.
+#: src/ui/analyser.rs:78
+msgid "Pro analyser"
+msgstr "Профессиональный анализатор"
+
+#. Translators: A picture of frequencies over time, brighter where louder.
+#: src/ui/analyser.rs:500
+msgid "Spectrogram"
+msgstr "Спектрограмма"
+
+#. Translators: The loudest sample level of the last moments, in dBFS.
+#: src/ui/analyser.rs:190
+msgid "Peak"
+msgstr "Пик"
+
+#. Translators: Peak level minus RMS level, in dB.
+#: src/ui/analyser.rs:216
+msgid "Crest factor"
+msgstr "Пик-фактор"
+
+#. Translators: The loudest frequency in the spectrum right now.
+#: src/ui/analyser.rs:228
+msgid "Dominant frequency"
+msgstr "Доминирующая частота"
+
+#. Translators: Shown in the pro analyser while the song is paused.
+#: src/ui/analyser.rs:160
+msgid "Paused: the picture holds still"
+msgstr "Пауза: изображение замерло"
+
+#. Translators: Hover text on the oscilloscope's time base and gain buttons.
+#: src/ui/analyser.rs:374
+msgid "Click to step, right-click to step back, or scroll over the scope"
+msgstr "Щёлкните для шага вперёд, правой кнопкой для шага назад или прокрутите над осциллографом"
+
 #~ msgid "Scroll left"
 #~ msgstr "Прокрутить влево"
 

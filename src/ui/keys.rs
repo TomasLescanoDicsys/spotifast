@@ -16,6 +16,7 @@ pub(super) const SIDEBAR_SHORTCUT: &str = platform_shortcut("Ctrl+B", "Cmd+B");
 pub(super) const QUIT_SHORTCUT: &str = platform_shortcut("Ctrl+Q", "Cmd+Q");
 pub(super) const WINAMP_SHORTCUT: &str = platform_shortcut("Ctrl+M", "Cmd+Shift+M");
 pub(super) const MILKDROP_SHORTCUT: &str = platform_shortcut("Ctrl+Shift+K", "Cmd+Shift+K");
+pub(super) const PRO_ANALYSER_SHORTCUT: &str = platform_shortcut("Ctrl+Shift+O", "Cmd+Shift+O");
 
 pub fn handle(app: &mut App, ctx: &egui::Context) {
     let typing = ctx.memory(|memory| memory.focused().is_some());
@@ -87,6 +88,11 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
             Modifiers::COMMAND | Modifiers::SHIFT,
             Key::K,
             Action::ToggleWinampMilkdrop,
+        );
+        key(
+            Modifiers::COMMAND | Modifiers::SHIFT,
+            Key::O,
+            Action::ToggleProAnalyser,
         );
         key(
             Modifiers::COMMAND,
@@ -270,6 +276,7 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             keys(MILKDROP_SHORTCUT),
             gettext(locale, "MilkDrop, under the mini player"),
         ),
+        (keys(PRO_ANALYSER_SHORTCUT), gettext(locale, "Pro analyser")),
         (
             // Translators: Keep the key name F. Translate "or" and "double-click".
             gettext(locale, "F  or  double-click"),

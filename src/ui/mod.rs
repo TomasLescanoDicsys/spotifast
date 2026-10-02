@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+pub mod analyser;
 pub mod artist;
 pub mod collection;
 pub(crate) mod devices;

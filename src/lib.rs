@@ -1,5 +1,6 @@
 //! Spotifast's internals, exposed so diagnostics and tests can reach them.
 
+pub mod analyser;
 pub mod api;
 pub mod app;
 #[cfg(target_os = "linux")]

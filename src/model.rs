@@ -1168,6 +1168,8 @@ pub enum Action {
     ToggleWinampShade,
     /// Open or close the MilkDrop window.
     ToggleWinampMilkdrop,
+    /// Open or close the pro analyser's window.
+    ToggleProAnalyser,
     /// How long each MilkDrop preset plays, in seconds.
     SetMilkdropSeconds(u32),
     SetMilkdropScale(u32),

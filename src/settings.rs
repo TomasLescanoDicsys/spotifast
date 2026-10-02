@@ -355,6 +355,9 @@ pub struct Settings {
     pub winamp_shaded: bool,
     /// The MilkDrop window is open (its own window, not part of the skin).
     pub milkdrop_open: bool,
+    /// The pro analyser's window is open: a large scope, spectrum, and
+    /// spectrogram with their scales.
+    pub pro_analyser_open: bool,
     /// How long each preset plays before the next, in seconds.
     pub milkdrop_seconds: u32,
     /// How many frames a second the MilkDrop window draws; 0 is uncapped.
@@ -474,6 +477,7 @@ impl Default for Settings {
             eq_shaded: false,
             winamp_shaded: false,
             milkdrop_open: false,
+            pro_analyser_open: false,
             milkdrop_seconds: crate::milkdrop::DEFAULT_SECONDS,
             milkdrop_fps: crate::milkdrop::DEFAULT_FPS,
             milkdrop_screen_hz: 0,

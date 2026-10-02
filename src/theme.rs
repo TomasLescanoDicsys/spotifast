@@ -402,6 +402,7 @@ fastframe_icons::icons! {
         prefix: "spotifast-icon-",
         directory: "../assets/icons/",
         ArrowLeft => lucide "arrow-left",
+        Activity => "activity",
         ArrowRight => "arrow-right",
         AudioLines => "audio-lines",
         BadgeCheck => "badge-check",

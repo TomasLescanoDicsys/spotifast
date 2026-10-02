@@ -803,6 +803,13 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.local.playback = crate::player::Playback::Playing;
                 app.winamp.tap.push(&demo_sound(), 1.0);
             }
+            // The pro analyser's window over the sample sound.
+            "pro-analyser" => {
+                app.settings.pro_analyser_open = true;
+                play_here(app);
+                app.local.playback = crate::player::Playback::Playing;
+                app.winamp.tap.push(&demo_sound(), 1.0);
+            }
             // The sign-in card and the card while the session connects.
             "signed-out" => {
                 app.auth = AuthStatus::SignedOut;
