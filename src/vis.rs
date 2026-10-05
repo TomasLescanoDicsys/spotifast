@@ -52,6 +52,9 @@ const SPEC_SCALE: f32 = 0.5;
 /// child process, when one is running.
 pub struct AudioTap {
     samples: Mutex<VecDeque<f32>>,
+    /// The same half second in stereo, for the pro analyser's loudness and
+    /// envelope, which must read every frame once and in order.
+    stereo: Mutex<Stereo>,
     /// The ring the MilkDrop child reads, attached while its window is open.
     #[cfg(feature = "milkdrop")]
     shm: Mutex<Option<std::sync::Arc<crate::milkdrop::shm::Ring>>>,
@@ -63,10 +66,22 @@ impl std::fmt::Debug for AudioTap {
     }
 }
 
+/// Stereo frames, and how many have ever gone in: a reader that keeps the
+/// count it last reached asks for exactly the frames after it.
+#[derive(Default)]
+struct Stereo {
+    frames: VecDeque<[f32; 2]>,
+    pushed: u64,
+}
+
 impl Default for AudioTap {
     fn default() -> Self {
         Self {
             samples: Mutex::new(VecDeque::with_capacity(KEPT)),
+            stereo: Mutex::new(Stereo {
+                frames: VecDeque::with_capacity(KEPT),
+                pushed: 0,
+            }),
             #[cfg(feature = "milkdrop")]
             shm: Mutex::new(None),
         }
@@ -88,6 +103,7 @@ impl AudioTap {
     /// attached, MilkDrop's stereo shared-memory ring.
     pub fn push(&self, interleaved: &[f64], gain: f32) {
         let mut samples = self.samples.lock().unwrap_or_else(|p| p.into_inner());
+        let mut kept = self.stereo.lock().unwrap_or_else(|p| p.into_inner());
         let (frames, _) = interleaved.as_chunks::<{ NUM_CHANNELS as usize }>();
         #[cfg(feature = "milkdrop")]
         let shm = self.shm.lock().unwrap_or_else(|p| p.into_inner()).clone();
@@ -103,6 +119,12 @@ impl AudioTap {
                 samples.pop_front();
             }
             samples.push_back(mono);
+            if kept.frames.len() == KEPT {
+                kept.frames.pop_front();
+            }
+            kept.frames
+                .push_back([frame[0] as f32 * gain, frame[1] as f32 * gain]);
+            kept.pushed += 1;
             #[cfg(feature = "milkdrop")]
             if shm.is_some() {
                 stereo.push(frame[0] as f32 * gain);
@@ -132,10 +154,32 @@ impl AudioTap {
         out
     }
 
+    /// The stereo frames after frame number `from`, up to `lag` frames
+    /// before the newest, and the number to ask from next. Frames older than
+    /// the tap keeps are gone: reading then starts at the oldest it holds.
+    pub fn stereo_since(&self, from: u64, lag: usize) -> (Vec<[f32; 2]>, u64) {
+        let kept = self.stereo.lock().unwrap_or_else(|p| p.into_inner());
+        let end = kept.pushed.saturating_sub(lag as u64);
+        let oldest = kept.pushed - kept.frames.len() as u64;
+        let start = from.max(oldest).min(end);
+        let skip = (start - oldest) as usize;
+        let take = (end - start) as usize;
+        (
+            kept.frames.range(skip..skip + take).copied().collect(),
+            end.max(from),
+        )
+    }
+
     pub fn clear(&self) {
         self.samples
             .lock()
             .unwrap_or_else(|p| p.into_inner())
+            .clear();
+        // The count runs on, so a reader never takes old frames for new.
+        self.stereo
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .frames
             .clear();
     }
 }
@@ -663,6 +707,29 @@ mod tests {
         assert_eq!(tap.window(2, 1), [0.0, 1.0]);
         tap.clear();
         assert_eq!(tap.window(2, 0), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_tap_hands_each_stereo_frame_over_once() {
+        let tap = AudioTap::new();
+        tap.push(&[0.5, -0.5, 1.0, 0.0, 0.2, 0.4], 2.0);
+        let (frames, next) = tap.stereo_since(0, 1);
+        assert_eq!(frames, vec![[1.0, -1.0], [2.0, 0.0]]);
+        assert_eq!(next, 2);
+        let (frames, next) = tap.stereo_since(next, 1);
+        assert!(frames.is_empty());
+        assert_eq!(next, 2);
+        tap.push(&[0.1, 0.1], 1.0);
+        let (frames, next) = tap.stereo_since(next, 1);
+        assert_eq!(frames.len(), 1);
+        assert!((frames[0][1] - 0.8).abs() < 1e-6);
+        assert_eq!(next, 3);
+        // Cleared on stop, the count runs on.
+        tap.clear();
+        tap.push(&[0.3, 0.3], 1.0);
+        let (frames, next) = tap.stereo_since(next, 0);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(next, 5);
     }
 
     #[test]

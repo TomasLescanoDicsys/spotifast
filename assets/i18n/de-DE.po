@@ -3188,11 +3188,6 @@ msgstr "Spitze"
 msgid "Crest factor"
 msgstr "Crest-Faktor"
 
-#. Translators: The loudest frequency in the spectrum right now.
-#: src/ui/analyser.rs:228
-msgid "Dominant frequency"
-msgstr "Dominante Frequenz"
-
 #. Translators: Shown in the pro analyser while the song is paused.
 #: src/ui/analyser.rs:160
 msgid "Paused: the picture holds still"
@@ -3202,6 +3197,195 @@ msgstr "Pausiert: Das Bild bleibt stehen"
 #: src/ui/analyser.rs:374
 msgid "Click to step, right-click to step back, or scroll over the scope"
 msgstr "Klicken für den nächsten Schritt, Rechtsklick für den vorigen, oder über dem Oszilloskop scrollen"
+
+#. Translators: The oscilloscope's gain when it fits itself to the wave.
+#: src/ui/analyser.rs
+msgid "Auto"
+msgstr "Auto"
+
+#. Translators: The spectral centroid, where the sound's power is centred.
+#: src/ui/analyser.rs
+msgid "Brightness"
+msgstr "Helligkeit"
+
+#. Translators: How to read the spectrogram. Keep the arrows.
+#: src/ui/analyser.rs
+msgid "Time → · Frequency ↑ · Colour is loudness · White line is the note"
+msgstr "Zeit → · Frequenz ↑ · Farbe ist Lautstärke · Weiße Linie ist der Ton"
+
+#. Translators: The top of the audible band, above 4 kHz.
+#: src/ui/analyser.rs
+msgid "Treble"
+msgstr "Höhen"
+
+#. Translators: The middle of the audible band, 250 Hz to 4 kHz.
+#: src/ui/analyser.rs
+msgid "Mids"
+msgstr "Mitten"
+
+#. Translators: The bottom of the audible band, under 250 Hz.
+#: src/ui/analyser.rs
+msgid "Bass"
+msgstr "Bässe"
+
+#. Translators: The right end of the spectrogram's time axis.
+#: src/ui/analyser.rs
+msgid "now"
+msgstr "jetzt"
+
+#. Translators: A point on the spectrogram's time axis.
+#: src/ui/analyser.rs
+#, rust-format
+msgid "{seconds} s ago"
+msgstr "vor {seconds} s"
+
+#. Translators: The top of the spectrogram's colour scale.
+#: src/ui/analyser.rs
+msgid "loud"
+msgstr "laut"
+
+#. Translators: The bottom of the spectrogram's colour scale.
+#: src/ui/analyser.rs
+msgid "silence"
+msgstr "Stille"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). C is Do.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "C"
+msgstr "C"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). D is Re.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "D"
+msgstr "D"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). E is Mi.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "E"
+msgstr "E"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). F is Fa.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "F"
+msgstr "F"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). G is Sol.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "G"
+msgstr "G"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). A is La.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "A"
+msgstr "A"
+
+#. Translators: A note's name: languages that sing Do, Re, Mi use those names; others keep the letter (German and Polish name B as H). B is Si.
+#: src/ui/analyser.rs
+msgctxt "note name"
+msgid "B"
+msgstr "H"
+
+#. Translators: The pro analyser's card showing the musical note sounding.
+#: src/ui/analyser/cards.rs
+msgid "Note"
+msgstr "Note"
+
+#. Translators: The levels of a note's harmonics, whole multiples of its frequency.
+#: src/ui/analyser/cards.rs
+msgid "Harmonics"
+msgstr "Harmonische"
+
+#. Translators: Perceived loudness, measured in LUFS.
+#: src/ui/analyser/cards.rs
+msgid "Loudness"
+msgstr "Lautheit"
+
+#. Translators: Loudness over the last 400 ms.
+#: src/ui/analyser/cards.rs
+msgid "Momentary"
+msgstr "Momentan"
+
+#. Translators: Loudness over the last 3 seconds.
+#: src/ui/analyser/cards.rs
+msgid "Short-term"
+msgstr "Kurzzeit"
+
+#. Translators: Loudness over the whole song.
+#: src/ui/analyser/cards.rs
+msgid "Integrated"
+msgstr "Integriert"
+
+#. Translators: How much Spotify's loudness normalisation would turn this song up or down.
+#: src/ui/analyser/cards.rs
+#, rust-format
+msgid "At Spotify's -14 LUFS: {gain} dB"
+msgstr "Bei Spotifys -14 LUFS: {gain} dB"
+
+#. Translators: The card measuring the sound's AM, FM and spectral shape.
+#: src/ui/analyser/cards.rs
+msgid "Modulation and filters"
+msgstr "Modulation und Filter"
+
+#. Translators: The amplitude envelope, read as amplitude modulation.
+#: src/ui/analyser/cards.rs
+msgid "Envelope (AM)"
+msgstr "Hüllkurve (AM)"
+
+#. Translators: A held note's pitch swing, read as frequency modulation.
+#: src/ui/analyser/cards.rs
+msgid "Vibrato (FM)"
+msgstr "Vibrato (FM)"
+
+#. Translators: Vibrato needs one note held for over a second.
+#: src/ui/analyser/cards.rs
+msgid "No held note"
+msgstr "Kein gehaltener Ton"
+
+#. Translators: How the spectrum's power is spread, which filters change.
+#: src/ui/analyser/cards.rs
+msgid "Spectral shape (filters)"
+msgstr "Spektrale Form (Filter)"
+
+#. Translators: A filter sweeping up, letting more treble through.
+#: src/ui/analyser/cards.rs
+msgid "Opening"
+msgstr "öffnet"
+
+#. Translators: A filter sweeping down, cutting more treble.
+#: src/ui/analyser/cards.rs
+msgid "Closing"
+msgstr "schließt"
+
+#. Translators: No filter sweep.
+#: src/ui/analyser/cards.rs
+msgid "Steady"
+msgstr "stabil"
+
+#. Translators: A sound made of clear tones rather than noise.
+#: src/ui/analyser/cards.rs
+msgid "Tonal"
+msgstr "tonal"
+
+#. Translators: A sound whose spectrum is flat, like noise.
+#: src/ui/analyser/cards.rs
+msgid "Noise-like"
+msgstr "rauschartig"
+
+#. Translators: The frequency under which 85% of the sound's power lies.
+#: src/ui/analyser/cards.rs
+msgid "Cutoff"
+msgstr "Grenzfrequenz"
+
+#. Translators: Spectral flatness: 0 for a pure tone, 1 for white noise.
+#: src/ui/analyser/cards.rs
+msgid "Flatness"
+msgstr "Flachheit"
 
 #~ msgid "Scroll left"
 #~ msgstr "Nach links scrollen"

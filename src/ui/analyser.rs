@@ -1,8 +1,13 @@
-//! The pro analyser's window: a large oscilloscope, a spectrum and a
-//! spectrogram, each with its scales and a readout under the pointer, and
-//! the levels read out above them. It shows the sound playing on this
-//! computer, post-equalizer and pre-volume like every visualiser; a paused
-//! song holds the picture still so it can be read.
+//! The pro analyser's window. On the left, the pictures with their scales
+//! and a readout under the pointer: an oscilloscope with a phosphor's
+//! afterglow, a spectrum with the note's harmonics in colour, and a
+//! spectrogram with the note's line through it. On the right, the
+//! instruments: the note, loudness, and the sound's modulations and
+//! filtering, each with the formula it measures. It shows the sound
+//! playing on this computer, post-equalizer and pre-volume like every
+//! visualiser; a paused song holds the picture still so it can be read.
+
+mod cards;
 
 use std::time::Instant;
 
@@ -12,19 +17,19 @@ use egui::{
 };
 
 use crate::analyser::{
-    DIVISIONS, FLOOR_DB, GAINS, HISTORY, HOP, ROWS, TIME_BASES, band_level, bin_hz, decibels,
-    hz_at, note, position_of,
+    DIVISIONS, FLOOR_DB, GAINS, HISTORY, HOP, NAMED_CLARITY, ROWS, TIME_BASES, band_level, bin_hz,
+    decibels, hz_at, note, position_of,
 };
 use crate::app::{App, NowPlaying};
-use crate::i18n::gettext;
+use crate::i18n::{Locale, gettext, pgettext};
 use crate::model::Action;
 
 /// The window's size when it first opens, and the least it shrinks to.
-const SIZE: [f32; 2] = [1120.0, 800.0];
-const MIN_SIZE: [f32; 2] = [760.0, 560.0];
+const SIZE: [f32; 2] = [1400.0, 820.0];
+const MIN_SIZE: [f32; 2] = [1080.0, 700.0];
 
 /// An instrument's screen: near-black glass, a dim green grid, a phosphor
-/// trace, amber peaks, and a sweep from cyan bass to violet treble.
+/// trace, amber peaks.
 const GLASS: Color32 = Color32::from_rgb(7, 10, 8);
 const PANEL: Color32 = Color32::from_rgb(12, 17, 14);
 const EDGE: Color32 = Color32::from_rgb(32, 46, 38);
@@ -35,19 +40,31 @@ const TEXT: Color32 = Color32::from_rgb(206, 232, 214);
 const TRACE: Color32 = Color32::from_rgb(70, 255, 150);
 const PEAK: Color32 = Color32::from_rgb(255, 190, 70);
 const CLIP: Color32 = Color32::from_rgb(255, 82, 82);
-const BASS: Color32 = Color32::from_rgb(46, 210, 255);
-const TREBLE: Color32 = Color32::from_rgb(178, 112, 255);
+/// The spectrum itself stays a quiet sea green, so the harmonics stand out.
+const SPECTRUM: Color32 = Color32::from_rgb(110, 190, 160);
+/// One colour for each harmonic, the fundamental first.
+const HARMONIC: [Color32; 8] = [
+    Color32::from_rgb(255, 214, 92),
+    Color32::from_rgb(255, 140, 64),
+    Color32::from_rgb(255, 92, 120),
+    Color32::from_rgb(214, 96, 255),
+    Color32::from_rgb(124, 124, 255),
+    Color32::from_rgb(64, 180, 255),
+    Color32::from_rgb(64, 230, 200),
+    Color32::from_rgb(150, 255, 110),
+];
 
 /// The frequencies the axes name.
 const NAMED_HZ: [f32; 10] = [
     20.0, 50.0, 100.0, 200.0, 500.0, 1_000.0, 2_000.0, 5_000.0, 10_000.0, 20_000.0,
 ];
+/// Where the bass ends and the treble begins, as engineers divide the band.
+const BASS_TOP_HZ: f32 = 250.0;
+const TREBLE_FOOT_HZ: f32 = 4_000.0;
 /// The spectrum's scale, a line every 12 dB.
 const DB_STEP: f32 = 12.0;
 /// The scope's rows of divisions.
 const ROWS_OF_DIVISIONS: usize = 8;
-/// The level meters' range, in dBFS.
-const METER_FLOOR: f32 = -60.0;
 /// The spectrogram's colours from the floor to full scale, after the
 /// perceptually even "inferno" map.
 const INFERNO: [[u8; 3]; 9] = [
@@ -66,6 +83,9 @@ const SCROLL_STEP: f32 = 60.0;
 /// Room each panel keeps around its plot for the title and the scales:
 /// left, top, right, bottom.
 const MARGINS: [f32; 4] = [58.0, 34.0, 16.0, 24.0];
+/// Space between panels, and the instruments' column width.
+const GAP: f32 = 10.0;
+const INSTRUMENTS_WIDTH: [f32; 2] = [330.0, 400.0];
 
 /// Shows the analyser's window while it is open. Its close button, Esc,
 /// and the shortcut close it again.
@@ -100,6 +120,9 @@ fn window(app: &mut App, ui: &mut Ui) {
         app.actions.push(Action::TogglePlay);
     }
     let now = app.now_playing();
+    if let Some(now) = &now {
+        app.pro_analyser.follow(&now.uri);
+    }
     let sounding = now
         .as_ref()
         .is_some_and(|now| (now.playing || now.loading) && now.local);
@@ -115,25 +138,35 @@ fn window(app: &mut App, ui: &mut Ui) {
     let painter = ui.painter().clone();
     painter.rect_filled(rect, 0.0, GLASS);
     let inner = rect.shrink(14.0);
-    let header = Rect::from_min_size(inner.min, vec2(inner.width(), 64.0));
+    let header = Rect::from_min_size(inner.min, vec2(inner.width(), 30.0));
     header_block(app, &painter, header, now.as_ref(), sounding);
 
-    let body = Rect::from_min_max(pos2(inner.left(), header.bottom() + 12.0), inner.max);
-    let gap = 10.0;
-    let usable = body.height() - 2.0 * gap;
-    let scope_rect = Rect::from_min_size(body.min, vec2(body.width(), usable * 0.38));
-    let spectrum_rect = Rect::from_min_size(
-        pos2(body.left(), scope_rect.bottom() + gap),
-        vec2(body.width(), usable * 0.34),
+    let body = Rect::from_min_max(pos2(inner.left(), header.bottom() + GAP), inner.max);
+    let instruments = (body.width() * 0.27).clamp(INSTRUMENTS_WIDTH[0], INSTRUMENTS_WIDTH[1]);
+    let pictures = Rect::from_min_max(
+        body.min,
+        pos2(body.right() - instruments - GAP, body.bottom()),
     );
-    let spectrogram_rect =
-        Rect::from_min_max(pos2(body.left(), spectrum_rect.bottom() + gap), body.max);
+    let column = Rect::from_min_max(pos2(pictures.right() + GAP, body.top()), body.max);
+
+    let usable = pictures.height() - 2.0 * GAP;
+    let scope_rect = Rect::from_min_size(pictures.min, vec2(pictures.width(), usable * 0.42));
+    let spectrum_rect = Rect::from_min_size(
+        pos2(pictures.left(), scope_rect.bottom() + GAP),
+        vec2(pictures.width(), usable * 0.31),
+    );
+    let spectrogram_rect = Rect::from_min_max(
+        pos2(pictures.left(), spectrum_rect.bottom() + GAP),
+        pictures.max,
+    );
     scope(app, ui, &painter, scope_rect);
     spectrum(app, ui, &painter, spectrum_rect);
     spectrogram(app, ui, &painter, spectrogram_rect, texture);
+    cards::instruments(app, &painter, column);
 }
 
-/// The window's head: what is playing on the left, the levels on the right.
+/// The window's head: what is playing, and that the picture holds while
+/// the song is paused.
 fn header_block(
     app: &App,
     painter: &Painter,
@@ -142,13 +175,9 @@ fn header_block(
     sounding: bool,
 ) {
     let locale = app.locale;
-    let card = 152.0;
-    let gap = 8.0;
-    let cards_left = rect.right() - 4.0 * card - 3.0 * gap;
-
-    painter.text(
-        rect.left_top() + vec2(0.0, 4.0),
-        Align2::LEFT_TOP,
+    let title = painter.text(
+        pos2(rect.left(), rect.center().y),
+        Align2::LEFT_CENTER,
         gettext(locale, "Pro analyser").to_uppercase(),
         FontId::proportional(11.0),
         LABEL,
@@ -160,160 +189,64 @@ fn header_block(
             format!("{}  ·  {}", now.title, now.subtitle)
         }
     });
-    let width = (cards_left - rect.left() - 16.0).max(40.0);
-    let song_rect = Rect::from_min_size(rect.left_top() + vec2(0.0, 22.0), vec2(width, 22.0));
+    let paused = gettext(locale, "Paused: the picture holds still");
+    let paused_width = if !sounding && now.is_some() {
+        let width = painter
+            .layout_no_wrap(paused.to_string(), FontId::proportional(11.5), PEAK)
+            .size()
+            .x;
+        let x = rect.right() - width;
+        painter.circle_filled(pos2(x - 10.0, rect.center().y), 3.5, PEAK);
+        painter.text(
+            pos2(x, rect.center().y),
+            Align2::LEFT_CENTER,
+            paused.as_ref(),
+            FontId::proportional(11.5),
+            PEAK,
+        );
+        width + 30.0
+    } else {
+        0.0
+    };
+    let left = title.right() + 14.0;
+    let width = (rect.right() - paused_width - left).max(40.0);
     let galley = crate::bidi::layout(
         painter,
         &song,
-        FontId::proportional(17.0),
+        FontId::proportional(16.0),
         TEXT,
         width,
         1,
         Some(crate::bidi::ELLIPSIS),
     );
+    let song_rect = Rect::from_min_size(
+        pos2(left, rect.center().y - galley.size().y / 2.0),
+        vec2(width, galley.size().y),
+    );
     painter.galley(crate::bidi::galley_pos(song_rect, &galley), galley, TEXT);
-    if !sounding && now.is_some() {
-        let y = rect.top() + 54.0;
-        painter.circle_filled(pos2(rect.left() + 4.0, y), 3.5, PEAK);
-        painter.text(
-            pos2(rect.left() + 14.0, y),
-            Align2::LEFT_CENTER,
-            gettext(locale, "Paused: the picture holds still"),
-            FontId::proportional(11.5),
-            PEAK,
-        );
-    }
-
-    let levels = app.pro_analyser.levels();
-    let mut left = cards_left;
-    let mut next_card = || {
-        let at = Rect::from_min_size(pos2(left, rect.top()), vec2(card, rect.height()));
-        left += card + gap;
-        at
-    };
-    let clipping = levels.held > -0.1;
-    readout_card(
-        painter,
-        next_card(),
-        &gettext(locale, "Peak"),
-        &db_label(levels.peak),
-        None,
-        if clipping { CLIP } else { TEXT },
-        Some((levels.peak, levels.held)),
-    );
-    readout_card(
-        painter,
-        next_card(),
-        "RMS",
-        &db_label(levels.rms),
-        None,
-        TEXT,
-        Some((levels.rms, FLOOR_DB)),
-    );
-    let crest = if levels.peak > FLOOR_DB {
-        format!("{:.1} dB", (levels.peak - levels.rms).max(0.0))
-    } else {
-        "-".into()
-    };
-    readout_card(
-        painter,
-        next_card(),
-        &gettext(locale, "Crest factor"),
-        &crest,
-        None,
-        TEXT,
-        None,
-    );
-    let dominant = app.pro_analyser.dominant();
-    readout_card(
-        painter,
-        next_card(),
-        &gettext(locale, "Dominant frequency"),
-        &dominant.map_or_else(|| "-".into(), hz_precise),
-        dominant.and_then(note_label).as_deref(),
-        TEXT,
-        None,
-    );
 }
 
-/// One reading in a card: its name, its value, and along the foot either
-/// an aside or a meter of `(level, held)`.
-fn readout_card(
-    painter: &Painter,
-    rect: Rect,
-    label: &str,
-    value: &str,
-    aside: Option<&str>,
-    colour: Color32,
-    meter: Option<(f32, f32)>,
-) {
+/// A panel and its title, with an aside in small type after it. Returns
+/// the plot inside the room for the scales.
+fn panel(painter: &Painter, rect: Rect, title: &str, aside: &str, margins: [f32; 4]) -> Rect {
     painter.rect_filled(rect, 8.0, PANEL);
     painter.rect_stroke(rect, 8.0, Stroke::new(1.0, EDGE), StrokeKind::Inside);
-    let inner = rect.shrink2(vec2(11.0, 8.0));
-    painter.text(
-        inner.left_top(),
-        Align2::LEFT_TOP,
-        label.to_uppercase(),
-        FontId::proportional(10.0),
-        LABEL,
-    );
-    painter.text(
-        pos2(inner.left(), inner.center().y + 1.0),
-        Align2::LEFT_CENTER,
-        value,
-        FontId::monospace(18.0),
-        colour,
-    );
-    if let Some(aside) = aside {
-        painter.text(
-            inner.left_bottom() + vec2(0.0, 2.0),
-            Align2::LEFT_BOTTOM,
-            aside,
-            FontId::monospace(11.0),
-            PEAK,
-        );
-    }
-    let Some((level, held)) = meter else {
-        return;
-    };
-    let track = Rect::from_min_max(
-        pos2(inner.left(), inner.bottom() - 4.0),
-        pos2(inner.right(), inner.bottom()),
-    );
-    painter.rect_filled(track, 2.0, GRID);
-    let reach = |db: f32| ((db - METER_FLOOR) / -METER_FLOOR).clamp(0.0, 1.0);
-    let filled = Rect::from_min_max(
-        track.min,
-        pos2(track.left() + track.width() * reach(level), track.bottom()),
-    );
-    let fill = if level > -3.0 {
-        CLIP
-    } else if level > -12.0 {
-        PEAK
-    } else {
-        TRACE
-    };
-    painter.rect_filled(filled, 2.0, fill);
-    if held > METER_FLOOR {
-        let x = track.left() + track.width() * reach(held);
-        painter.line_segment(
-            [pos2(x, track.top() - 2.0), pos2(x, track.bottom() + 1.0)],
-            Stroke::new(2.0, PEAK),
-        );
-    }
-}
-
-/// A panel and its title. Returns the plot inside the room for the scales.
-fn panel(painter: &Painter, rect: Rect, title: &str, margins: [f32; 4]) -> Rect {
-    painter.rect_filled(rect, 8.0, PANEL);
-    painter.rect_stroke(rect, 8.0, Stroke::new(1.0, EDGE), StrokeKind::Inside);
-    painter.text(
+    let title = painter.text(
         rect.left_top() + vec2(12.0, 10.0),
         Align2::LEFT_TOP,
         title.to_uppercase(),
         FontId::proportional(11.0),
         LABEL,
     );
+    if !aside.is_empty() {
+        painter.text(
+            pos2(title.right() + 12.0, title.center().y),
+            Align2::LEFT_CENTER,
+            aside,
+            FontId::monospace(10.5),
+            LABEL.gamma_multiply(0.8),
+        );
+    }
     Rect::from_min_max(
         pos2(rect.left() + margins[0], rect.top() + margins[1]),
         pos2(rect.right() - margins[2], rect.bottom() - margins[3]),
@@ -344,7 +277,7 @@ fn chip_step(response: &Response) -> i32 {
 }
 
 /// Whole steps of wheel travel over `response`, kept between frames so a
-/// trackpad's small movements add up.
+/// trackpad's small movements add up, and whether Shift is held.
 fn wheel_steps(ui: &Ui, response: &Response, id: &str) -> (i32, bool) {
     if !response.hovered() {
         return (0, false);
@@ -382,23 +315,73 @@ fn readout(painter: &Painter, plot: Rect, pointer: Pos2, text: String) {
     painter.galley(rect.min + vec2(6.0, 4.0), galley, TEXT);
 }
 
+/// The wave as points across `plot` at `gain`, the edges at full scale.
+/// With more samples than pixels each column spans its samples' lowest to
+/// highest, so no peak goes missing between pixels.
+fn trace_points(trace: &[f32], plot: Rect, gain: f32) -> Vec<Pos2> {
+    let centre = plot.center().y;
+    let y_of = |sample: f32| centre - (sample * gain).clamp(-1.0, 1.0) * plot.height() / 2.0;
+    let width = plot.width();
+    let count = trace.len();
+    if count as f32 > width {
+        let columns = (width as usize).max(1);
+        (0..columns)
+            .flat_map(|column| {
+                let from = column * count / columns;
+                let to = ((column + 1) * count / columns).max(from + 1).min(count);
+                let (low, high) = trace[from..to]
+                    .iter()
+                    .fold((f32::MAX, f32::MIN), |(low, high), sample| {
+                        (low.min(*sample), high.max(*sample))
+                    });
+                let x = plot.left() + column as f32 + 0.5;
+                let (first, second) = if column % 2 == 0 {
+                    (high, low)
+                } else {
+                    (low, high)
+                };
+                [pos2(x, y_of(first)), pos2(x, y_of(second))]
+            })
+            .collect()
+    } else {
+        let last = count.saturating_sub(1).max(1) as f32;
+        trace
+            .iter()
+            .enumerate()
+            .map(|(i, sample)| pos2(plot.left() + width * i as f32 / last, y_of(*sample)))
+            .collect()
+    }
+}
+
 /// The scope: the wave over ten divisions at the chosen time base, held
-/// still on a rising edge when there is one.
+/// still on a rising edge when there is one, its gain fitted to the wave
+/// unless one is chosen, with the last few traces fading behind it.
 fn scope(app: &mut App, ui: &Ui, painter: &Painter, rect: Rect) {
     let locale = app.locale;
-    let plot = panel(painter, rect, &gettext(locale, "Oscilloscope"), MARGINS);
+    let plot = panel(
+        painter,
+        rect,
+        &gettext(locale, "Oscilloscope"),
+        "x(t)",
+        MARGINS,
+    );
     let hint = gettext(
         locale,
         "Click to step, right-click to step back, or scroll over the scope",
     );
     let pro = &mut app.pro_analyser;
     let head = rect.top() + 16.0;
+    let gain_text = if pro.gain_index() == 0 {
+        format!("{} ×{:.1}", gettext(locale, "Auto"), pro.gain())
+    } else {
+        format!("×{}", GAINS[pro.gain_index()])
+    };
     let (left, gain) = chip(
         ui,
         painter,
         rect.right() - 12.0,
         head,
-        format!("×{:.0}", GAINS[pro.gain]),
+        gain_text,
         "scope-gain",
     );
     let (left, base) = chip(
@@ -406,7 +389,7 @@ fn scope(app: &mut App, ui: &Ui, painter: &Painter, rect: Rect) {
         painter,
         left,
         head,
-        format!("{}/div", duration_label(TIME_BASES[pro.time_base])),
+        format!("{}/div", duration_label(TIME_BASES[pro.time_base()])),
         "scope-base",
     );
     let plot_response = ui.interact(plot, ui.id().with("scope-plot"), Sense::hover());
@@ -414,12 +397,16 @@ fn scope(app: &mut App, ui: &Ui, painter: &Painter, rect: Rect) {
     // The wheel zooms in on the wave: up shortens the time base, or with
     // Shift raises the gain.
     let (base_step, gain_step) = if shift { (0, wheel) } else { (-wheel, 0) };
-    pro.time_base = step_index(
-        pro.time_base,
+    pro.set_time_base(step_index(
+        pro.time_base(),
         chip_step(&base) + base_step,
         TIME_BASES.len(),
-    );
-    pro.gain = step_index(pro.gain, chip_step(&gain) + gain_step, GAINS.len());
+    ));
+    pro.set_gain_index(step_index(
+        pro.gain_index(),
+        chip_step(&gain) + gain_step,
+        GAINS.len(),
+    ));
     base.on_hover_text(hint.as_ref());
     gain.on_hover_text(hint.as_ref());
 
@@ -432,10 +419,123 @@ fn scope(app: &mut App, ui: &Ui, painter: &Painter, rect: Rect) {
         if triggered { TRACE } else { LABEL },
     );
 
-    let gain = GAINS[pro.gain];
-    let base = TIME_BASES[pro.time_base];
-    // The graticule: ten divisions across, eight down, with fine ticks
-    // along the centre lines as an instrument's screen has.
+    let gain = pro.gain();
+    let base = TIME_BASES[pro.time_base()];
+    graticule(painter, plot);
+    for j in (0..=ROWS_OF_DIVISIONS).step_by(2) {
+        let y = plot.top() + plot.height() * j as f32 / ROWS_OF_DIVISIONS as f32;
+        let value = (1.0 - j as f32 / (ROWS_OF_DIVISIONS / 2) as f32) / gain;
+        let text = if value.abs() < 1e-6 {
+            "0".to_owned()
+        } else if value.abs() >= 10.0 {
+            format!("{value:+.0}")
+        } else {
+            format!("{value:+.2}")
+        };
+        painter.text(
+            pos2(plot.left() - 8.0, y),
+            Align2::RIGHT_CENTER,
+            text,
+            FontId::monospace(10.5),
+            LABEL,
+        );
+    }
+    for i in (0..=DIVISIONS).step_by(2) {
+        let x = plot.left() + plot.width() * i as f32 / DIVISIONS as f32;
+        painter.text(
+            pos2(x, plot.bottom() + 5.0),
+            Align2::CENTER_TOP,
+            duration_label(base * i as f32),
+            FontId::monospace(10.5),
+            LABEL,
+        );
+    }
+
+    let clip = painter.with_clip_rect(plot.expand(1.0));
+    // The phosphor's afterglow: earlier traces, fainter the older.
+    let trails = pro.trails();
+    for (age, earlier) in trails.iter().rev().skip(1).enumerate() {
+        let fade = 1.0 - (age + 1) as f32 / trails.len().max(1) as f32;
+        clip.add(Shape::line(
+            trace_points(earlier, plot, gain),
+            Stroke::new(1.2, TRACE.gamma_multiply(0.04 + 0.3 * fade * fade)),
+        ));
+    }
+    let points = trace_points(trace, plot, gain);
+    clip.add(Shape::line(
+        points.clone(),
+        Stroke::new(6.0, TRACE.gamma_multiply(0.10)),
+    ));
+    clip.add(Shape::line(points.clone(), Stroke::new(1.6, TRACE)));
+    let count = trace.len();
+    let width = plot.width();
+    // Few enough samples to see one by one: mark each.
+    if (count as f32) <= width / 6.0 {
+        for point in &points {
+            clip.circle_filled(*point, 2.4, TRACE);
+        }
+    }
+    // A chosen gain can push the wave off the screen: say where.
+    if gain * trace.iter().fold(0.0f32, |most, s| most.max(s.abs())) > 1.0 {
+        let columns = (width as usize).max(1);
+        let mut over = vec![(false, false); columns];
+        let last = count.saturating_sub(1).max(1);
+        for (i, sample) in trace.iter().enumerate() {
+            let column = (i * (columns - 1) / last).min(columns - 1);
+            if sample * gain > 1.0 {
+                over[column].0 = true;
+            } else if sample * gain < -1.0 {
+                over[column].1 = true;
+            }
+        }
+        for (column, (top, bottom)) in over.into_iter().enumerate() {
+            let x = plot.left() + column as f32;
+            if top {
+                clip.line_segment(
+                    [pos2(x, plot.top()), pos2(x, plot.top() + 4.0)],
+                    Stroke::new(1.0, CLIP),
+                );
+            }
+            if bottom {
+                clip.line_segment(
+                    [pos2(x, plot.bottom() - 4.0), pos2(x, plot.bottom())],
+                    Stroke::new(1.0, CLIP),
+                );
+            }
+        }
+    }
+
+    if let Some(pointer) = plot_response.hover_pos() {
+        ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+        let t = ((pointer.x - plot.left()) / width).clamp(0.0, 1.0);
+        let last = count.saturating_sub(1).max(1);
+        let index = ((t * last as f32).round() as usize).min(count - 1);
+        let sample = trace[index];
+        let x = plot.left() + width * index as f32 / last as f32;
+        let y = plot.center().y - (sample * gain).clamp(-1.0, 1.0) * plot.height() / 2.0;
+        clip.line_segment(
+            [pos2(x, plot.top()), pos2(x, plot.bottom())],
+            Stroke::new(1.0, LABEL),
+        );
+        clip.circle_filled(pos2(x, y), 3.5, PEAK);
+        let at = base * DIVISIONS as f32 * index as f32 / last as f32;
+        readout(
+            painter,
+            plot,
+            pointer,
+            format!(
+                "t = {}   x = {:+.4}   {}",
+                duration_label(at),
+                sample,
+                db_label(decibels(sample.abs()))
+            ),
+        );
+    }
+}
+
+/// An oscilloscope's graticule: ten divisions across, eight down, with
+/// fine ticks along the centre lines.
+fn graticule(painter: &Painter, plot: Rect) {
     for i in 0..=DIVISIONS {
         let x = plot.left() + plot.width() * i as f32 / DIVISIONS as f32;
         let colour = if i == 0 || i == DIVISIONS {
@@ -475,125 +575,35 @@ fn scope(app: &mut App, ui: &Ui, painter: &Painter, rect: Rect) {
             Stroke::new(1.0, GRID_MAJOR),
         );
     }
-    for j in (0..=ROWS_OF_DIVISIONS).step_by(2) {
-        let y = plot.top() + plot.height() * j as f32 / ROWS_OF_DIVISIONS as f32;
-        let value = (1.0 - j as f32 / (ROWS_OF_DIVISIONS / 2) as f32) / gain;
-        let text = if value == 0.0 {
-            "0".to_owned()
-        } else {
-            format!("{value:+.2}")
-        };
-        painter.text(
-            pos2(plot.left() - 8.0, y),
-            Align2::RIGHT_CENTER,
-            text,
-            FontId::monospace(10.5),
-            LABEL,
-        );
-    }
-    for i in (0..=DIVISIONS).step_by(2) {
-        let x = plot.left() + plot.width() * i as f32 / DIVISIONS as f32;
-        painter.text(
-            pos2(x, plot.bottom() + 5.0),
-            Align2::CENTER_TOP,
-            duration_label(base * i as f32),
-            FontId::monospace(10.5),
-            LABEL,
-        );
-    }
+}
 
-    let clip = painter.with_clip_rect(plot.expand(1.0));
-    let y_of = |sample: f32| centre.y - (sample * gain).clamp(-1.02, 1.02) * plot.height() / 2.0;
-    let width = plot.width();
-    let count = trace.len();
-    let points: Vec<Pos2> = if count as f32 > width {
-        // More samples than pixels: each column spans its samples' lowest
-        // to highest, so no peak goes missing between pixels.
-        let columns = (width as usize).max(1);
-        (0..columns)
-            .flat_map(|column| {
-                let from = column * count / columns;
-                let to = ((column + 1) * count / columns).max(from + 1).min(count);
-                let (low, high) = trace[from..to]
-                    .iter()
-                    .fold((f32::MAX, f32::MIN), |(low, high), sample| {
-                        (low.min(*sample), high.max(*sample))
-                    });
-                let x = plot.left() + column as f32 + 0.5;
-                let (first, second) = if column % 2 == 0 {
-                    (high, low)
-                } else {
-                    (low, high)
-                };
-                [pos2(x, y_of(first)), pos2(x, y_of(second))]
-            })
-            .collect()
-    } else {
-        let last = count.saturating_sub(1).max(1) as f32;
-        trace
-            .iter()
-            .enumerate()
-            .map(|(i, sample)| pos2(plot.left() + width * i as f32 / last, y_of(*sample)))
-            .collect()
-    };
-    clip.add(Shape::line(
-        points.clone(),
-        Stroke::new(6.0, TRACE.gamma_multiply(0.10)),
-    ));
-    clip.add(Shape::line(points.clone(), Stroke::new(1.6, TRACE)));
-    // Few enough samples to see one by one: mark each.
-    if (count as f32) <= width / 6.0 {
-        for point in &points {
-            clip.circle_filled(*point, 2.4, TRACE);
-        }
-    }
-
-    if let Some(pointer) = plot_response.hover_pos() {
-        ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
-        let t = ((pointer.x - plot.left()) / width).clamp(0.0, 1.0);
-        let index = ((t * count.saturating_sub(1) as f32).round() as usize).min(count - 1);
-        let sample = trace[index];
-        let x = plot.left() + width * index as f32 / count.saturating_sub(1).max(1) as f32;
-        clip.line_segment(
-            [pos2(x, plot.top()), pos2(x, plot.bottom())],
-            Stroke::new(1.0, LABEL),
+/// A dashed upright line across `plot` at `x`.
+fn dashed(painter: &Painter, plot: Rect, x: f32, colour: Color32) {
+    let mut y = plot.top();
+    while y < plot.bottom() {
+        painter.line_segment(
+            [pos2(x, y), pos2(x, (y + 4.0).min(plot.bottom()))],
+            Stroke::new(1.0, colour),
         );
-        clip.circle_filled(pos2(x, y_of(sample)), 3.5, PEAK);
-        let at = base * DIVISIONS as f32 * index as f32 / count.saturating_sub(1).max(1) as f32;
-        readout(
-            painter,
-            plot,
-            pointer,
-            format!(
-                "{}   {:+.4}   {}",
-                duration_label(at),
-                sample,
-                db_label(decibels(sample.abs()))
-            ),
-        );
+        y += 8.0;
     }
 }
 
 /// The spectrum: dBFS against a logarithmic frequency axis, the held peaks
-/// above it and the dominant frequency marked.
+/// above it, the fundamental's harmonics each in its colour, and the
+/// centroid and the 85% rolloff marked.
 fn spectrum(app: &App, ui: &Ui, painter: &Painter, rect: Rect) {
     let locale = app.locale;
     let plot = panel(
         painter,
         rect,
         &gettext(locale, "Spectrum analyser"),
-        MARGINS,
-    );
-    painter.text(
-        pos2(rect.right() - 14.0, rect.top() + 16.0),
-        Align2::RIGHT_CENTER,
-        format!(
-            "dBFS · FFT {} · {:.1} Hz/bin",
+        &format!(
+            "X[k] = Σ x[n]·w[n]·e^(−j2πkn/N)   N = {}   Δf = fs/N = {:.1} Hz",
             crate::analyser::FFT_SIZE,
             bin_hz()
         ),
-        FontId::monospace(11.0),
-        LABEL,
+        MARGINS,
     );
     frequency_grid(painter, plot, false);
     let mut level = 0.0;
@@ -626,14 +636,34 @@ fn spectrum(app: &App, ui: &Ui, painter: &Painter, rect: Rect) {
         )
     };
     let x_of = |column: usize| plot.left() + plot.width() * column as f32 / columns as f32;
+    let x_of_hz = |hz: f32| plot.left() + plot.width() * position_of(hz);
     let clip = painter.with_clip_rect(plot);
+
+    // Which harmonic, if any, each column belongs to: a quarter-tone either
+    // side of k·f₀.
+    let pitch = pro.pitch().filter(|found| found.clarity >= NAMED_CLARITY);
+    let quarter_tone = 2f32.powf(1.0 / 24.0);
+    let harmonic_of = |column: usize| {
+        let hz = hz_at(column as f32 / columns as f32);
+        let found = pitch?;
+        let k = (hz / found.hz).round();
+        let close = k >= 1.0 && k <= HARMONIC.len() as f32 && {
+            let centre = found.hz * k;
+            hz >= centre / quarter_tone && hz <= centre * quarter_tone
+        };
+        close.then(|| k as usize - 1)
+    };
+
     let mut fill = egui::Mesh::default();
     let mut line = Vec::with_capacity(columns + 1);
     for column in 0..=columns {
-        let colour = lerp(BASS, TREBLE, column as f32 / columns as f32);
         let top = pos2(x_of(column), y_of_db(plot, band(column, pro.spectrum())));
+        let (colour, strength) = match harmonic_of(column) {
+            Some(k) => (HARMONIC[k], 0.75),
+            None => (SPECTRUM, 0.32),
+        };
         let base = fill.vertices.len() as u32;
-        fill.colored_vertex(top, colour.gamma_multiply(0.42));
+        fill.colored_vertex(top, colour.gamma_multiply(strength));
         fill.colored_vertex(pos2(top.x, plot.bottom()), colour.gamma_multiply(0.03));
         if column > 0 {
             fill.add_triangle(base - 2, base - 1, base);
@@ -650,34 +680,59 @@ fn spectrum(app: &App, ui: &Ui, painter: &Painter, rect: Rect) {
         .collect();
     clip.add(Shape::line(
         peaks,
-        Stroke::new(1.0, PEAK.gamma_multiply(0.8)),
+        Stroke::new(1.0, PEAK.gamma_multiply(0.7)),
     ));
 
-    if let Some(hz) = pro.dominant() {
-        let x = plot.left() + plot.width() * position_of(hz);
-        let level = band_level(pro.spectrum(), hz * 0.995, hz * 1.005);
-        let y = y_of_db(plot, level) - 6.0;
-        clip.add(Shape::convex_polygon(
-            vec![pos2(x - 5.0, y - 8.0), pos2(x + 5.0, y - 8.0), pos2(x, y)],
-            PEAK,
-            Stroke::NONE,
-        ));
-        let text = match note_label(hz) {
-            Some(note) => format!("{}  {note}", hz_precise(hz)),
-            None => hz_precise(hz),
-        };
-        let anchor = if position_of(hz) > 0.85 {
-            Align2::RIGHT_BOTTOM
-        } else {
-            Align2::LEFT_BOTTOM
-        };
-        clip.text(
-            pos2(x, (y - 10.0).max(plot.top() + 14.0)),
-            anchor,
-            text,
-            FontId::monospace(11.0),
-            PEAK,
-        );
+    // The shape filters move: the centroid and the 85% rolloff.
+    if let Some(shape) = pro.shape() {
+        for (hz, label) in [
+            (shape.centroid, gettext(locale, "Brightness").to_string()),
+            (shape.rolloff, "85%".to_owned()),
+        ] {
+            let x = x_of_hz(hz);
+            dashed(&clip, plot, x, LABEL.gamma_multiply(0.8));
+            clip.text(
+                pos2(x + 4.0, plot.bottom() - 4.0),
+                Align2::LEFT_BOTTOM,
+                label,
+                FontId::proportional(10.0),
+                LABEL,
+            );
+        }
+    }
+
+    // Each harmonic's mark and name, k·f₀, the fundamental's with its note.
+    if let Some(found) = pitch {
+        let levels = pro.harmonics();
+        let mut last_label = f32::MIN;
+        for (k, colour) in HARMONIC.iter().enumerate() {
+            let hz = found.hz * (k + 1) as f32;
+            if hz > crate::analyser::HIGH_HZ {
+                break;
+            }
+            let x = x_of_hz(hz);
+            let y = y_of_db(plot, levels[k]);
+            clip.circle_filled(pos2(x, y), 3.0, *colour);
+            if x - last_label < 34.0 {
+                continue;
+            }
+            last_label = x;
+            let label = if k == 0 {
+                match note(hz) {
+                    Some((name, _)) => format!("f₀ {name}"),
+                    None => "f₀".to_owned(),
+                }
+            } else {
+                format!("{}f₀", k + 1)
+            };
+            clip.text(
+                pos2(x, (y - 8.0).max(plot.top() + 12.0)),
+                Align2::CENTER_BOTTOM,
+                label,
+                FontId::monospace(10.5),
+                *colour,
+            );
+        }
     }
 
     let response = ui.interact(plot, ui.id().with("spectrum-plot"), Sense::hover());
@@ -697,23 +752,36 @@ fn spectrum(app: &App, ui: &Ui, painter: &Painter, rect: Rect) {
             Stroke::new(1.0, GRID_MAJOR),
         );
         clip.circle_filled(pos2(pointer.x, y), 3.5, PEAK);
-        let note = note_label(hz).unwrap_or_default();
-        readout(
-            painter,
-            plot,
-            pointer,
-            format!("{}   {note}   {}", hz_precise(hz), db_label(level)),
+        let mut text = format!(
+            "{}   {}   {}",
+            hz_precise(hz),
+            note_label(hz).unwrap_or_default(),
+            db_label(level)
         );
+        if let Some(found) = pitch {
+            text.push_str(&format!("   f/f₀ = {:.2}", hz / found.hz));
+        }
+        readout(painter, plot, pointer, text);
     }
 }
 
 /// The spectrogram: the last ten seconds, newest on the right, bass at the
-/// foot, brighter for louder, with its colour scale beside it.
+/// foot, brighter for louder, with the band's regions named, the note's
+/// line through it, and its colour scale beside it.
 fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: TextureId) {
     let locale = app.locale;
     let mut margins = MARGINS;
-    margins[2] = 54.0;
-    let plot = panel(painter, rect, &gettext(locale, "Spectrogram"), margins);
+    margins[2] = 64.0;
+    let plot = panel(
+        painter,
+        rect,
+        &gettext(locale, "Spectrogram"),
+        &gettext(
+            locale,
+            "Time → · Frequency ↑ · Colour is loudness · White line is the note",
+        ),
+        margins,
+    );
     let pro = &app.pro_analyser;
     // The ring's oldest column is the next one written: from there to the
     // end, then from the start, reads left to right in time.
@@ -736,6 +804,87 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
         );
     }
     frequency_grid(painter, plot, true);
+    let y_of_hz = |hz: f32| plot.bottom() - plot.height() * position_of(hz);
+    let clip = painter.with_clip_rect(plot);
+
+    // The bass, the mids and the treble, divided where engineers divide them.
+    for hz in [BASS_TOP_HZ, TREBLE_FOOT_HZ] {
+        let y = y_of_hz(hz);
+        let mut x = plot.left();
+        while x < plot.right() {
+            clip.line_segment(
+                [pos2(x, y), pos2((x + 6.0).min(plot.right()), y)],
+                Stroke::new(1.0, Color32::from_white_alpha(70)),
+            );
+            x += 12.0;
+        }
+    }
+    for (label, low, high) in [
+        (
+            gettext(locale, "Treble"),
+            TREBLE_FOOT_HZ,
+            crate::analyser::HIGH_HZ,
+        ),
+        (gettext(locale, "Mids"), BASS_TOP_HZ, TREBLE_FOOT_HZ),
+        (
+            gettext(locale, "Bass"),
+            crate::analyser::LOW_HZ,
+            BASS_TOP_HZ,
+        ),
+    ] {
+        let y = (y_of_hz(low) + y_of_hz(high)) / 2.0;
+        let galley = painter.layout_no_wrap(label.to_uppercase(), FontId::proportional(10.0), TEXT);
+        let tag = Rect::from_min_size(
+            pos2(plot.left() + 6.0, y - galley.size().y / 2.0 - 2.0),
+            galley.size() + vec2(10.0, 4.0),
+        );
+        clip.rect_filled(tag, 3.0, Color32::from_black_alpha(170));
+        clip.galley(tag.min + vec2(5.0, 2.0), galley, TEXT);
+    }
+
+    // The note's line: each column's named fundamental, and its name where
+    // it changes and holds.
+    let column_x =
+        |offset: usize| plot.left() + plot.width() * (offset as f32 + 0.5) / HISTORY as f32;
+    let mut held: Option<(String, usize)> = None;
+    let mut last_label = f32::MIN;
+    for offset in 0..HISTORY {
+        let index = (next + offset) % HISTORY;
+        let Some(hz) = pro.column_note(index) else {
+            held = None;
+            continue;
+        };
+        let x = column_x(offset);
+        let y = y_of_hz(hz);
+        clip.rect_filled(
+            Rect::from_center_size(pos2(x, y), vec2(2.5, 2.5)),
+            0.0,
+            Color32::from_white_alpha(230),
+        );
+        let name = note(hz).map(|(name, _)| name).unwrap_or_default();
+        let run = match &mut held {
+            Some((current, run)) if *current == name => {
+                *run += 1;
+                *run
+            }
+            _ => {
+                held = Some((name.clone(), 1));
+                1
+            }
+        };
+        // Named once it has held for 100 ms.
+        if run == 5 && x - last_label > 44.0 {
+            last_label = x;
+            clip.text(
+                pos2(x, y - 5.0),
+                Align2::CENTER_BOTTOM,
+                name,
+                FontId::monospace(10.0),
+                Color32::WHITE,
+            );
+        }
+    }
+
     let seconds = (HISTORY as u32 * HOP.as_millis() as u32) / 1000;
     for second in (0..=seconds).step_by(2) {
         let x = plot.right() - plot.width() * second as f32 / seconds as f32;
@@ -744,13 +893,20 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
             Stroke::new(1.0, Color32::from_white_alpha(18)),
         );
         let label = if second == 0 {
-            "0 s".to_owned()
+            gettext(locale, "now").to_string()
         } else {
-            format!("-{second} s")
+            gettext(locale, "{seconds} s ago").replace("{seconds}", &second.to_string())
+        };
+        let align = if second == seconds {
+            Align2::LEFT_TOP
+        } else if second == 0 {
+            Align2::RIGHT_TOP
+        } else {
+            Align2::CENTER_TOP
         };
         painter.text(
             pos2(x, plot.bottom() + 5.0),
-            Align2::CENTER_TOP,
+            align,
             label,
             FontId::monospace(10.5),
             LABEL,
@@ -759,8 +915,8 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
 
     // The colour scale, from full scale at the top to the floor.
     let bar = Rect::from_min_max(
-        pos2(plot.right() + 12.0, plot.top()),
-        pos2(plot.right() + 22.0, plot.bottom()),
+        pos2(plot.right() + 12.0, plot.top() + 12.0),
+        pos2(plot.right() + 22.0, plot.bottom() - 12.0),
     );
     let mut mesh = egui::Mesh::default();
     let steps = 32;
@@ -778,7 +934,21 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
     }
     painter.add(Shape::mesh(mesh));
     painter.rect_stroke(bar, 0.0, Stroke::new(1.0, EDGE), StrokeKind::Outside);
-    for (t, label) in [(0.0, "0"), (0.5, "-48"), (1.0, "-96")] {
+    painter.text(
+        pos2(bar.center().x, bar.top() - 3.0),
+        Align2::CENTER_BOTTOM,
+        gettext(locale, "loud").as_ref(),
+        FontId::proportional(9.5),
+        LABEL,
+    );
+    painter.text(
+        pos2(bar.center().x, bar.bottom() + 3.0),
+        Align2::CENTER_TOP,
+        gettext(locale, "silence").as_ref(),
+        FontId::proportional(9.5),
+        LABEL,
+    );
+    for (t, label) in [(0.0, "0 dB"), (0.5, "-48"), (1.0, "-96")] {
         painter.text(
             pos2(bar.right() + 4.0, bar.top() + bar.height() * t),
             Align2::LEFT_CENTER,
@@ -798,7 +968,6 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
         let level = f32::from(pro.column(column)[row]) / 255.0 * -FLOOR_DB + FLOOR_DB;
         let hz = hz_at((row as f32 + 0.5) / ROWS as f32);
         let ago = (1.0 - across) * seconds as f32;
-        let clip = painter.with_clip_rect(plot);
         clip.line_segment(
             [pos2(pointer.x, plot.top()), pos2(pointer.x, plot.bottom())],
             Stroke::new(1.0, Color32::from_white_alpha(60)),
@@ -807,17 +976,11 @@ fn spectrogram(app: &App, ui: &Ui, painter: &Painter, rect: Rect, texture: Textu
             [pos2(plot.left(), pointer.y), pos2(plot.right(), pointer.y)],
             Stroke::new(1.0, Color32::from_white_alpha(60)),
         );
-        let note = note_label(hz).unwrap_or_default();
-        readout(
-            painter,
-            plot,
-            pointer,
-            format!(
-                "-{ago:.2} s   {}   {note}   {}",
-                hz_precise(hz),
-                db_label(level)
-            ),
-        );
+        let mut text = format!("-{ago:.2} s   {}   {}", hz_precise(hz), db_label(level));
+        if let Some((name, _)) = pro.column_note(column).and_then(note) {
+            text.push_str(&format!("   {name}"));
+        }
+        readout(painter, plot, pointer, text);
     }
 }
 
@@ -832,11 +995,12 @@ fn frequency_grid(painter: &Painter, plot: Rect, upright: bool) {
                 continue;
             }
             let t = position_of(hz);
-            let colour = if multiple == 1 { GRID_MAJOR } else { GRID };
             let colour = if upright {
                 Color32::from_white_alpha(if multiple == 1 { 34 } else { 12 })
+            } else if multiple == 1 {
+                GRID_MAJOR
             } else {
-                colour
+                GRID
             };
             let line = if upright {
                 let y = plot.bottom() - plot.height() * t;
@@ -849,6 +1013,8 @@ fn frequency_grid(painter: &Painter, plot: Rect, upright: bool) {
         }
         decade *= 10.0;
     }
+    // Names too close to the last one drawn on a short plot are left out.
+    let mut last_y = f32::MAX;
     for hz in NAMED_HZ {
         let t = position_of(hz);
         let label = if hz >= 1_000.0 {
@@ -858,6 +1024,10 @@ fn frequency_grid(painter: &Painter, plot: Rect, upright: bool) {
         };
         if upright {
             let y = plot.bottom() - plot.height() * t;
+            if last_y - y < 11.0 {
+                continue;
+            }
+            last_y = y;
             painter.text(
                 pos2(plot.left() - 8.0, y),
                 Align2::RIGHT_CENTER,
@@ -975,6 +1145,50 @@ fn db_label(level: f32) -> String {
     }
 }
 
+/// A pitch class's name in the reader's language, with its sharp: Do♯ or
+/// C#. Each language names the seven natural notes its own way.
+fn note_name(locale: Locale, class: usize) -> String {
+    // The natural note each class sharpens, and whether it is sharp.
+    const NATURAL: [(usize, bool); 12] = [
+        (0, false),
+        (0, true),
+        (1, false),
+        (1, true),
+        (2, false),
+        (3, false),
+        (3, true),
+        (4, false),
+        (4, true),
+        (5, false),
+        (5, true),
+        (6, false),
+    ];
+    let (natural, sharp) = NATURAL[class % 12];
+    let name = match natural {
+        // Translators: A note's name. Languages that sing Do, Re, Mi name
+        // it Do; others keep the letter.
+        0 => pgettext(locale, "note name", "C"),
+        // Translators: A note's name: Re in solfège, D as a letter.
+        1 => pgettext(locale, "note name", "D"),
+        // Translators: A note's name: Mi in solfège, E as a letter.
+        2 => pgettext(locale, "note name", "E"),
+        // Translators: A note's name: Fa in solfège, F as a letter.
+        3 => pgettext(locale, "note name", "F"),
+        // Translators: A note's name: Sol in solfège, G as a letter.
+        4 => pgettext(locale, "note name", "G"),
+        // Translators: A note's name: La in solfège, A as a letter.
+        5 => pgettext(locale, "note name", "A"),
+        // Translators: A note's name: Si in solfège, B (H in German) as a
+        // letter.
+        _ => pgettext(locale, "note name", "B"),
+    };
+    if sharp {
+        format!("{name}#")
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,5 +1220,15 @@ mod tests {
         assert_eq!(image.size, [1, 3]);
         assert_eq!(image.pixels[2], inferno(255), "the bass at the foot");
         assert_eq!(image.pixels[0], inferno(0));
+    }
+
+    #[test]
+    fn notes_are_named_in_the_readers_language() {
+        assert_eq!(note_name(Locale::default(), 9), "A");
+        assert_eq!(note_name(Locale::default(), 10), "A#");
+        assert_eq!(note_name(Locale::default(), 0), "C");
+        assert_eq!(note_name(Locale::Spanish, 9), "La");
+        assert_eq!(note_name(Locale::Spanish, 6), "Fa#");
+        assert_eq!(note_name(Locale::German, 11), "H");
     }
 }

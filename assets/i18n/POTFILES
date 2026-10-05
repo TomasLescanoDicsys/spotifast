@@ -32,3 +32,4 @@ src/ui/winamp/playlist.rs
 src/util.rs
 src/window.rs
 src/ui/analyser.rs
+src/ui/analyser/cards.rs
