@@ -453,6 +453,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             app.actions
                                 .push(Action::ShowDialog(crate::model::Dialog::Shortcuts));
                         }
+                        // The top bar has no room for another button at the
+                        // narrowest window, so the analyser opens from here.
+                        if super::widgets::menu_item(
+                            ui,
+                            &palette,
+                            Some(Icon::Activity),
+                            &gettext(locale, "Pro analyser"),
+                        ) {
+                            app.actions.push(Action::ToggleProAnalyser);
+                        }
                         super::widgets::menu_separator(ui, &palette);
                         if super::widgets::menu_item(
                             ui,
@@ -475,26 +485,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .clicked()
                 {
                     app.actions.push(Action::Open(Page::Settings));
-                }
-                if theme::icon_button(
-                    ui,
-                    Icon::Activity,
-                    ICON_BUTTON_ICON,
-                    if app.settings.pro_analyser_open {
-                        palette.accent
-                    } else {
-                        palette.secondary
-                    },
-                    palette.text,
-                    &format!(
-                        "{} ({})",
-                        gettext(locale, "Pro analyser"),
-                        super::keys::PRO_ANALYSER_SHORTCUT
-                    ),
-                )
-                .clicked()
-                {
-                    app.actions.push(Action::ToggleProAnalyser);
                 }
                 if theme::icon_button(
                     ui,
